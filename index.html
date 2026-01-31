@@ -370,6 +370,41 @@
             transform: scale(0.98);
         }
 
+        /* Notification Badge */
+        .notification-badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #ff4444;
+            color: white;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: bold;
+            border: 3px solid white;
+            animation: pulse 1.5s ease-in-out infinite;
+            z-index: 10;
+        }
+
+        .notification-badge.show {
+            display: flex;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.7);
+            }
+            50% {
+                transform: scale(1.1);
+                box-shadow: 0 0 0 10px rgba(255, 68, 68, 0);
+            }
+        }
+
         #imageInput {
             display: none;
         }
@@ -988,6 +1023,7 @@
                     <span style="position: relative; z-index: 1;">📸 Upload Photos</span>
                 </button>
                 <button class="chat-btn" onclick="openChat()">
+                    <span class="notification-badge" id="chatNotificationBadge">0</span>
                     <span style="position: relative; z-index: 1;">💬 Our Chat</span>
                 </button>
             </div>
@@ -1054,8 +1090,122 @@
     </div>
 
     <script>
-        // Load images from localStorage on page load
-        window.addEventListener('DOMContentLoaded', loadImages);
+        // Notification System
+        let notificationSound = null;
+        let lastMessageCount = 0;
+        let notificationsEnabled = false;
+
+        // Request notification permission on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            loadImages();
+            initializeNotifications();
+            checkForNewMessages();
+            // Check for new messages every 3 seconds
+            setInterval(checkForNewMessages, 3000);
+        });
+
+        // Initialize browser notifications
+        function initializeNotifications() {
+            if ('Notification' in window) {
+                if (Notification.permission === 'default') {
+                    Notification.requestPermission().then(permission => {
+                        notificationsEnabled = permission === 'granted';
+                    });
+                } else {
+                    notificationsEnabled = Notification.permission === 'granted';
+                }
+            }
+            
+            // Initialize last message count
+            const messages = JSON.parse(localStorage.getItem('loveChat') || '[]');
+            lastMessageCount = messages.length;
+        }
+
+        // Check for new messages
+        function checkForNewMessages() {
+            const currentUser = document.getElementById('currentUser').value;
+            const messages = JSON.parse(localStorage.getItem('loveChat') || '[]');
+            const currentMessageCount = messages.length;
+            
+            // Calculate unread messages
+            if (currentMessageCount > lastMessageCount) {
+                const newMessages = messages.slice(lastMessageCount);
+                const unreadCount = newMessages.filter(msg => msg.sender !== currentUser).length;
+                
+                if (unreadCount > 0) {
+                    // Show badge
+                    updateNotificationBadge(unreadCount);
+                    
+                    // Play sound
+                    playNotificationSound();
+                    
+                    // Show browser notification
+                    const lastMessage = newMessages[newMessages.length - 1];
+                    if (lastMessage.sender !== currentUser) {
+                        showBrowserNotification(lastMessage);
+                    }
+                }
+                
+                lastMessageCount = currentMessageCount;
+            }
+        }
+
+        // Update notification badge
+        function updateNotificationBadge(count) {
+            const badge = document.getElementById('chatNotificationBadge');
+            if (count > 0) {
+                badge.textContent = count > 9 ? '9+' : count;
+                badge.classList.add('show');
+            } else {
+                badge.classList.remove('show');
+            }
+        }
+
+        // Play notification sound
+        function playNotificationSound() {
+            // Create a simple beep sound using Web Audio API
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.value = 800;
+                oscillator.type = 'sine';
+                
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.5);
+            } catch (e) {
+                console.log('Audio notification not available');
+            }
+        }
+
+        // Show browser notification
+        function showBrowserNotification(message) {
+            if (notificationsEnabled && document.hidden) {
+                const notification = new Notification('💕 New message from ' + message.sender, {
+                    body: message.text,
+                    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="75" font-size="75">💕</text></svg>',
+                    badge: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="75" font-size="75">💕</text></svg>',
+                    tag: 'love-chat',
+                    requireInteraction: false
+                });
+                
+                notification.onclick = function() {
+                    window.focus();
+                    openChat();
+                    notification.close();
+                };
+                
+                // Auto close after 5 seconds
+                setTimeout(() => notification.close(), 5000);
+            }
+        }
 
         // Handle image upload
         document.getElementById('imageInput').addEventListener('change', function(e) {
@@ -1163,6 +1313,9 @@
             chatModal.style.display = 'block';
             loadMessages();
             document.body.style.overflow = 'hidden';
+            
+            // Clear notification badge
+            updateNotificationBadge(0);
         }
 
         function closeChat() {
